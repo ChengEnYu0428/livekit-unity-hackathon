@@ -32,7 +32,7 @@ public sealed class LiveKitCalendarView
         new(244, 81, 30, 255), new(63, 81, 181, 255), new(230, 124, 115, 255), new(51, 182, 121, 255),
         new(246, 191, 38, 255), new(121, 134, 203, 255)
     };
-    private static readonly string[] WeekdayNames = { "週日", "週一", "週二", "週三", "週四", "週五", "週六" };
+    private static readonly string[] WeekdayNames = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     private const int ChipsPerCell = 2;
 
     private readonly Font font;
@@ -61,11 +61,11 @@ public sealed class LiveKitCalendarView
         Stretch((RectTransform)root.transform, Vector2.zero, Vector2.one, new Vector2(20, 65), new Vector2(-20, -109));
         Fill(root, Background, true);
 
-        // Top bar: 返回  今天  ‹ ›  2026年9月                     N 項待辦
+        // Top bar: Back  Today  ‹ ›  September 2026                     N items
         RectTransform bar = Rect("Top bar", root.transform);
         Stretch(bar, new Vector2(0, 1), Vector2.one, new Vector2(0, -58), Vector2.zero);
-        AddButton(bar, "返回", new Vector2(14, -11), new Vector2(76, 36), Background, true, close);
-        AddButton(bar, "今天", new Vector2(102, -11), new Vector2(76, 36), Background, true, () => { selected = DateTime.Today; month = FirstOfMonth(selected); Render(); });
+        AddButton(bar, "Back", new Vector2(14, -11), new Vector2(76, 36), Background, true, close);
+        AddButton(bar, "Today", new Vector2(102, -11), new Vector2(76, 36), Background, true, () => { selected = DateTime.Today; month = FirstOfMonth(selected); Render(); });
         AddButton(bar, "‹", new Vector2(188, -11), new Vector2(36, 36), Background, true, () => { month = month.AddMonths(-1); Render(); });
         AddButton(bar, "›", new Vector2(228, -11), new Vector2(36, 36), Background, true, () => { month = month.AddMonths(1); Render(); });
         monthLabel = Label(bar, "", 26, TextPrimary, TextAnchor.MiddleLeft);
@@ -101,9 +101,10 @@ public sealed class LiveKitCalendarView
         root.SetActive(false);
     }
 
-    public void Show(CollaborationResult result)
+    public void Show(CollaborationResult result, bool jumpToEvents = false)
     {
         Refresh(result);
+        if (jumpToEvents) JumpToFirstEvent();
         root.SetActive(true);
         root.transform.SetAsLastSibling();
     }
@@ -118,6 +119,27 @@ public sealed class LiveKitCalendarView
     }
 
     public void Hide() => root.SetActive(false);
+
+    /// <summary>Selects the first upcoming dated item (or the first one) so new events are in view.</summary>
+    private void JumpToFirstEvent()
+    {
+        DateTime? first = null, upcoming = null;
+        foreach (CollaborationTask task in tasks)
+        {
+            if (!TryDate(task, out DateTime date)) continue;
+            if (first == null || date < first) first = date;
+            if (date >= DateTime.Today && (upcoming == null || date < upcoming)) upcoming = date;
+        }
+        DateTime? target = upcoming ?? first;
+        if (target == null) return;
+        selected = target.Value;
+        month = FirstOfMonth(selected);
+        Render();
+    }
+
+    private static string TimeRange(CollaborationTask task) =>
+        string.IsNullOrEmpty(task.start_time) ? "" :
+        string.IsNullOrEmpty(task.end_time) ? task.start_time : task.start_time + "–" + task.end_time;
 
     /// <summary>Side by side in landscape; month above the day list on an upright phone.</summary>
     public void SetPortrait(bool value)
@@ -138,10 +160,10 @@ public sealed class LiveKitCalendarView
 
     private void Render()
     {
-        monthLabel.text = $"{month.Year}年{month.Month}月";
+        monthLabel.text = month.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
         int dated = 0;
         foreach (CollaborationTask task in tasks) if (TryDate(task, out _)) dated++;
-        summaryLabel.text = tasks.Count == 0 ? "尚無待辦" : $"{tasks.Count} 項待辦・{dated} 項已排入行事曆";
+        summaryLabel.text = tasks.Count == 0 ? "No action items yet" : $"{tasks.Count} items · {dated} on the calendar";
 
         DateTime start = month.AddDays(-(int)month.DayOfWeek);
         for (int i = 0; i < cells.Length; i++)
@@ -151,7 +173,7 @@ public sealed class LiveKitCalendarView
             bool inMonth = cell.Date.Month == month.Month;
             bool today = cell.Date == DateTime.Today;
             cell.Background.color = cell.Date == selected ? CellSelected : inMonth ? Cell : CellOtherMonth;
-            cell.Number.text = cell.Date.Day == 1 ? $"{cell.Date.Month}月{cell.Date.Day}日" : cell.Date.Day.ToString();
+            cell.Number.text = cell.Date.Day == 1 ? cell.Date.ToString("MMM d", CultureInfo.InvariantCulture) : cell.Date.Day.ToString();
             cell.Number.color = today ? TodayText : inMonth ? TextPrimary : TextFaint;
             cell.Circle.enabled = today;
             cell.Circle.rectTransform.sizeDelta = new Vector2(cell.Date.Day == 1 ? 64 : 28, 28);
@@ -159,30 +181,35 @@ public sealed class LiveKitCalendarView
             foreach (Transform child in cell.Chips) UnityEngine.Object.Destroy(child.gameObject);
             List<CollaborationTask> day = TasksOn(cell.Date);
             for (int c = 0; c < Math.Min(ChipsPerCell, day.Count); c++) Chip(cell.Chips, day[c], c);
-            cell.More.text = day.Count > ChipsPerCell ? $"還有 {day.Count - ChipsPerCell} 項" : "";
+            cell.More.text = day.Count > ChipsPerCell ? $"{day.Count - ChipsPerCell} more" : "";
         }
         RenderAgenda();
     }
 
     private void RenderAgenda()
     {
-        dayTitle.text = $"{selected.Month}月{selected.Day}日 {WeekdayNames[(int)selected.DayOfWeek]}";
+        dayTitle.text = selected.ToString("dddd, MMM d", CultureInfo.InvariantCulture);
         foreach (Transform child in sidebarContent) UnityEngine.Object.Destroy(child.gameObject);
 
         List<CollaborationTask> day = TasksOn(selected);
-        if (day.Count == 0) Note(tasks.Count == 0 ? "還沒有待辦。在輸入框打字，例如「小美負責做簡報，星期三以前完成」，再按「整理待辦」。" : "這天沒有待辦事項。");
+        if (day.Count == 0) Note(tasks.Count == 0 ? "No action items yet. Type something like \"Amy does the slides by Wednesday\" and press Action Items." : "Nothing scheduled for this day.");
         foreach (CollaborationTask task in day) TaskCard(task, false);
 
         var undated = tasks.FindAll(t => !TryDate(t, out _));
         if (undated.Count > 0)
         {
-            Heading("未排日期");
+            Heading("No date");
             foreach (CollaborationTask task in undated) TaskCard(task, true);
         }
     }
 
-    private List<CollaborationTask> TasksOn(DateTime date) =>
-        tasks.FindAll(t => TryDate(t, out DateTime d) && d == date);
+    private List<CollaborationTask> TasksOn(DateTime date)
+    {
+        var day = tasks.FindAll(t => TryDate(t, out DateTime d) && d == date);
+        // All-day items first, then by start time, like Google Calendar.
+        day.Sort((a, b) => string.CompareOrdinal(a.start_time ?? "", b.start_time ?? ""));
+        return day;
+    }
 
     private static bool TryDate(CollaborationTask task, out DateTime date) =>
         DateTime.TryParseExact(task?.deadline_date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
@@ -236,7 +263,8 @@ public sealed class LiveKitCalendarView
         var image = chip.gameObject.AddComponent<Image>();
         LiveKitMeetingStyle.ApplyRounded(image, ColorFor(task.owner));
         image.raycastTarget = false;
-        Text title = Label(chip, task.title, 12, Color.white, TextAnchor.MiddleLeft);
+        string time = task.start_time ?? "";
+        Text title = Label(chip, (time.Length > 0 ? time + " " : "") + task.title, 12, Color.white, TextAnchor.MiddleLeft);
         title.horizontalOverflow = HorizontalWrapMode.Overflow;
         Stretch(title.rectTransform, Vector2.zero, Vector2.one, new Vector2(6, 0), new Vector2(-4, 0));
         chip.gameObject.AddComponent<RectMask2D>();
@@ -252,8 +280,9 @@ public sealed class LiveKitCalendarView
         LiveKitMeetingStyle.ApplyRounded(stripe.gameObject.AddComponent<Image>(), ColorFor(task.owner), true);
         Text title = Label(card, task.title, 17, TextPrimary, TextAnchor.UpperLeft);
         Stretch(title.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -36), new Vector2(-10, -8));
-        string due = undated ? task.deadline : $"{task.deadline}（{task.deadline_date}）";
-        Text detail = Label(card, $"負責人：{task.owner}\n期限：{due}", 14, TextMuted, TextAnchor.UpperLeft);
+        string slot = TimeRange(task);
+        string due = undated ? task.deadline : slot.Length > 0 ? $"{task.deadline_date}  {slot}" : $"{task.deadline} ({task.deadline_date})";
+        Text detail = Label(card, $"Owner: {task.owner}\nDue: {due}", 14, TextMuted, TextAnchor.UpperLeft);
         Stretch(detail.rectTransform, Vector2.zero, Vector2.one, new Vector2(24, 6), new Vector2(-10, -38));
     }
 

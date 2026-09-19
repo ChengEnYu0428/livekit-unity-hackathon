@@ -669,10 +669,10 @@ namespace Jorjin.Streaming
         /// Sends a JPEG photo to the Agent for text recognition and Chinese/English
         /// translation. Returns 0 when sending starts, -2 when no Agent is in the room.
         /// </summary>
-        public int SendCollaborationImage(byte[] jpeg, string requestId, Action<bool> sent = null)
+        public int SendCollaborationImage(byte[] jpeg, string requestId, Action<bool> sent = null, string instruction = "")
         {
             return liveKitClient != null
-                ? liveKitClient.SendCollaborationImage(jpeg, requestId, sent)
+                ? liveKitClient.SendCollaborationImage(jpeg, requestId, sent, instruction)
                 : -1;
         }
 

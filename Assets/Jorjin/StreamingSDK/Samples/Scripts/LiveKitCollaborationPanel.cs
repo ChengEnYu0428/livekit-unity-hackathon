@@ -57,10 +57,15 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
     private float requestStarted;
     private ScrollRect scroll;
     private bool isBusy, capturingPhoto;
-    private Func<byte[], string, Action<bool>, int> sendPhoto;
+    private Func<byte[], string, Action<bool>, string, int> sendPhoto;
+    private bool photoPending;
     private CollaborationResult photoResult;
     private DeviceTextToSpeech speech;
     private LiveKitCalendarView calendarView;
+    private Func<bool> translationOn;
+    private Action toggleTranslation;
+    private Action<bool> workspaceChanged;
+    private Button translateButton;
     private const int MaxPhotoSide = 1600;
 
     public void Configure(Func<string, string, string, int> sender, Func<string> getSession, Func<bool> isConnected)
@@ -69,8 +74,15 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         if (canvasObject == null) Build();
     }
 
-    /// <summary>Photo text recognition: (jpeg, requestId, onSent) returns 0, or -2 without an Agent.</summary>
-    public void ConfigurePhoto(Func<byte[], string, Action<bool>, int> photoSender) { sendPhoto = photoSender; }
+    /// <summary>Photo + what you say or type: (jpeg, requestId, onSent, instruction) returns 0, or -2 without an Agent.</summary>
+    public void ConfigurePhoto(Func<byte[], string, Action<bool>, string, int> photoSender) { sendPhoto = photoSender; }
+
+    /// <summary>Live translation switch shared with the call screen.</summary>
+    public void ConfigureTranslation(Func<bool> isOn, Action toggle, Action<bool> onWorkspaceVisible)
+    {
+        translationOn = isOn; toggleTranslation = toggle; workspaceChanged = onWorkspaceVisible;
+        workspaceChanged?.Invoke(panel != null && panel.activeSelf);
+    }
 
     public void Receive(string sender, string json)
     {
@@ -86,7 +98,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         {
             sessionId = current; pendingId = null; isBusy = false; receiver.Clear();
             latestJson = latestText = answerJson = summaryJson = null; // tasksJson stays: tasks belong to the room
-            output.text = "Type a question and press 詢問 AI, or take a photo. Summaries need recording.";
+            output.text = "Type a question and press Ask AI, or take a photo. Summaries need recording.";
             status.text = "Anyone can ask. While you record, answers also use the conversation.";
         }
         while (inbox.TryDequeue(out var item))
@@ -104,7 +116,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
                 if (packet.type == "busy" || packet.type == "progress")
                 { isBusy = true; requestStarted = Time.realtimeSinceStartup; status.text = EnglishAgentMessage(packet.message); }
                 else if (packet.type == "error")
-                { isBusy = false; pendingId = null; status.text = EnglishAgentMessage(packet.message); }
+                { isBusy = false; pendingId = null; photoPending = false; status.text = EnglishAgentMessage(packet.message); }
                 else if (packet.type == "result_chunk" || packet.type == "result_complete")
                 {
                     string json = receiver.Accept(item.sender, packet);
@@ -115,8 +127,12 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
                     else if (result.kind == "tasks") { tasksJson = json; if (calendarView.Visible) calendarView.Refresh(result); }
                     else if (result.kind == "summary") summaryJson = json; else answerJson = json;
                     ShowResult(json);
+                    // A schedule photo turned into events: show them on the calendar right away.
+                    bool fromPhoto = photoPending && mine;
+                    if (mine) photoPending = false;
+                    if (fromPhoto && result.kind == "tasks") calendarView.Show(result, true);
                     status.text = result.kind == "ocr" ? "Text ready. Export Results saves it as TXT; Read plays it on this device." :
-                        result.kind == "tasks" ? "Action items updated. Press 查看待辦 to open the calendar; Export Results also saves an .ics file." :
+                        result.kind == "tasks" ? "Action items updated. Press View Calendar to open it; Export Results also saves an .ics file." :
                         result.kind == "summary" ? "Summary ready. You can export it now." : "Advice ready. Review the suggestions before taking action.";
                     isBusy = false; pendingId = null;
                     Canvas.ForceUpdateCanvases(); scroll.verticalNormalizedPosition = 1;
@@ -133,6 +149,13 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         photo.interactable = connected() && sendPhoto != null && !isBusy && !capturingPhoto;
         readOriginal.interactable = readTranslation.interactable = stopReading.interactable = photoResult != null;
         export.interactable = !string.IsNullOrEmpty(latestJson);
+        if (translateButton != null)
+        {
+            bool on = translationOn != null && translationOn();
+            translateButton.interactable = connected() && toggleTranslation != null;
+            translateButton.GetComponentInChildren<Text>().text = on ? "Live Translation: On" : "Live Translation: Off";
+            translateButton.GetComponent<Image>().color = on ? new Color(.14f, .71f, .83f) : new Color(.08f, .39f, .52f);
+        }
     }
 
     private IEnumerator RecognizePhoto()
@@ -152,13 +175,15 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         string requestId = Guid.NewGuid().ToString("N");
         pendingId = requestId;
         isBusy = true; requestStarted = Time.realtimeSinceStartup;
-        status.text = "Sending photo...";
+        status.text = string.IsNullOrEmpty(sessionId) ? "Sending photo..." : "Sending photo. Keep talking: what you say now is used too.";
+        photoPending = true;
+        string instruction = question.text?.Trim() ?? "";
         int result = sendPhoto(jpeg, requestId, sent =>
         {
             if (pendingId != requestId) return;
             if (sent) status.text = "Photo sent. Reading text...";
             else { isBusy = false; pendingId = null; status.text = "Could not send the photo. Check the connection and try again."; }
-        });
+        }, instruction);
         if (result != 0)
         {
             isBusy = false; pendingId = null;
@@ -210,6 +235,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         if (action == "ask" && text.Length == 0 && string.IsNullOrEmpty(sessionId))
         { status.text = "Type a question first. Leaving it blank analyzes the conversation only while recording."; return; }
         receiver.Clear();
+        photoPending = false;
         pendingId = Guid.NewGuid().ToString("N");
         int result = send(action, pendingId, text);
         if (result != 0)
@@ -255,6 +281,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
     public void SetWorkspaceVisible(bool visible)
     {
         panel.SetActive(visible); openButton.gameObject.SetActive(!visible);
+        workspaceChanged?.Invoke(visible);
         if (visible) RefreshMeeting();
     }
 
@@ -315,7 +342,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
             ?? sources.Find(v => v.Identity != main?.Identity);
         bool glasses = main != null && glassesSources.Contains(main.Key);
         bool fieldSide = main != null && !main.IsScreenShare && IsField(main);
-        videoTitle.text = glasses ? "AR Glasses Video (Selected)" : fieldSide ? "場域端畫面" : "Live Video / Select Glasses";
+        videoTitle.text = glasses ? "AR Glasses Video (Selected)" : fieldSide ? "Field Video" : "Live Video / Select Glasses";
         videoStatus.text = main == null ? "Source unavailable. Connect or switch sources." :
             (main.IsLocal ? "Local preview" : "LiveKit remote feed") + ": " + Compact(main.Identity, 36) +
             (main.IsScreenShare ? " / Screen share" : " / Camera") +
@@ -326,14 +353,14 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         BindVideo(peerVideo, peerAspect, peer);
         var identities = new HashSet<string>(); foreach (var v in sources) identities.Add(v.Identity);
         meetingStatus.text = (online ? "LiveKit connected" : "LiveKit disconnected") + "    Room: " + Compact(state.Room, 24) +
-            "    Participants: " + identities.Count + "    身分：" + (state.LocalRole == "expert" ? "專家端" : "場域端") + "    " + (state.Recording ? "Recording" : state.AgentReady ? "Transcript service ready" : "Waiting for transcript service");
-        recordingLabel.text = state.Pending ? "處理中…" : state.Recording ? "停止錄音" : "開始錄音";
-        microphoneLabel.text = state.MicrophoneMuted ? "麥克風：關" : "麥克風：開";
+            "    Participants: " + identities.Count + "    Role: " + (state.LocalRole == "expert" ? "Expert" : "Field") + "    " + (state.Recording ? "Recording" : state.AgentReady ? "Transcript service ready" : "Waiting for transcript service");
+        recordingLabel.text = state.Pending ? "Processing..." : state.Recording ? "Stop Recording" : "Start Recording";
+        microphoneLabel.text = state.MicrophoneMuted ? "Mic: Off" : "Mic: On";
         record.interactable = online && state.AgentReady && !state.Pending;
         microphone.interactable = online;
         sourceButton.interactable = sources.Count > 0;
         markGlasses.interactable = main != null && !main.IsScreenShare;
-        markGlasses.GetComponentInChildren<Text>().text = glasses ? "取消標記" : "標記眼鏡";
+        markGlasses.GetComponentInChildren<Text>().text = glasses ? "Unmark Glasses" : "Mark Glasses";
         string transcript = online ? state.Transcript : "";
         if (transcript != lastTranscript)
         {
@@ -385,22 +412,23 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         var scaler = canvasObject.GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         workspaceScaler = scaler;
         scaler.referenceResolution = new Vector2(1600, 900); scaler.matchWidthOrHeight = .5f;
-        openButton = ButtonAt(canvasObject.transform, "AI 協作", Vector2.one, new Vector2(-205, -72), new Vector2(185, 44), () => SetWorkspaceVisible(true));
+        openButton = ButtonAt(canvasObject.transform, "AI Collaboration", Vector2.one, new Vector2(-205, -72), new Vector2(185, 44), () => SetWorkspaceVisible(true));
         panel = new GameObject("Remote Collaboration Workspace", typeof(RectTransform), typeof(Image));
         panel.transform.SetParent(canvasObject.transform, false);
         Stretch(panel.GetComponent<RectTransform>(), Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
         panel.GetComponent<Image>().color = new Color(.035f, .055f, .09f, 1);
         Label(panel.transform, "AR Remote Collaboration", 29, new Vector2(22, -15), new Vector2(600, 44));
-        capture = ButtonAt(panel.transform, "截圖", Vector2.one, new Vector2(-295, -18), new Vector2(125, 38), () => StartCoroutine(CaptureWorkspace()));
-        ButtonAt(panel.transform, "返回通話", Vector2.one, new Vector2(-155, -18), new Vector2(130, 38), () => SetWorkspaceVisible(false));
+        capture = ButtonAt(panel.transform, "Screenshot", Vector2.one, new Vector2(-295, -18), new Vector2(125, 38), () => StartCoroutine(CaptureWorkspace()));
+        ButtonAt(panel.transform, "Back to Call", Vector2.one, new Vector2(-155, -18), new Vector2(130, 38), () => SetWorkspaceVisible(false));
+        translateButton = ButtonAt(panel.transform, "Live Translation: Off", Vector2.one, new Vector2(-455, -18), new Vector2(150, 38), () => toggleTranslation?.Invoke());
         meetingStatus = Label(panel.transform, "", 19, new Vector2(24, -65), new Vector2(1500, 30));
         Stretch(meetingStatus.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -103), new Vector2(-24, -65));
         leftColumn = Region(panel.transform, "Live video and conversation", new Vector2(0, 0), new Vector2(.60f, 1), new Vector2(20, 65), new Vector2(-10, -109));
         rightColumn = Region(panel.transform, "AI assistance", new Vector2(.60f, 0), Vector2.one, new Vector2(10, 65), new Vector2(-20, -109));
         videoTitle = Label(leftColumn, "Live Video", 23, Vector2.zero, new Vector2(550, 36));
         Stretch(videoTitle.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(0, -38), new Vector2(-276, 0));
-        sourceButton = ButtonAt(leftColumn, "切換畫面", Vector2.one, new Vector2(-264, 0), new Vector2(120, 34), SelectNextSource);
-        markGlasses = ButtonAt(leftColumn, "標記眼鏡", Vector2.one, new Vector2(-132, 0), new Vector2(132, 34), ToggleGlassesSource);
+        sourceButton = ButtonAt(leftColumn, "Switch Source", Vector2.one, new Vector2(-264, 0), new Vector2(120, 34), SelectNextSource);
+        markGlasses = ButtonAt(leftColumn, "Mark Glasses", Vector2.one, new Vector2(-132, 0), new Vector2(132, 34), ToggleGlassesSource);
         videoStatus = Label(leftColumn, "", 18, new Vector2(0, -44), new Vector2(920, 32));
         Stretch(videoStatus.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(0, -79), new Vector2(0, -44));
         var videoArea = Region(leftColumn, "Main video", new Vector2(0, .36f), Vector2.one, new Vector2(0, 10), new Vector2(0, -85), true);
@@ -423,25 +451,25 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         question = input.GetComponent<InputField>(); question.characterLimit = 2000; question.lineType = InputField.LineType.MultiLineNewline;
         var entry = Label(input.transform, "", 21, Vector2.zero, Vector2.zero);
         Stretch(entry.rectTransform, Vector2.zero, Vector2.one, new Vector2(12, 8), new Vector2(-12, -8)); question.textComponent = entry;
-        var hint = Label(input.transform, "Type a question, or text like \"小美 does the slides by Wednesday\" then press 整理待辦.", 19, Vector2.zero, Vector2.zero);
+        var hint = Label(input.transform, "Type a question, or text like \"Amy does the slides by Wednesday\" then press Action Items.", 19, Vector2.zero, Vector2.zero);
         Stretch(hint.rectTransform, Vector2.zero, Vector2.one, new Vector2(12, 8), new Vector2(-12, -8)); hint.color = new Color(.65f,.73f,.81f); question.placeholder = hint;
-        ask = ButtonAt(rightColumn, "詢問 AI", new Vector2(0, 1), new Vector2(0, -172), new Vector2(140, 38), () => Request("ask"));
-        summary = ButtonAt(rightColumn, "產生摘要", new Vector2(0, 1), new Vector2(150, -172), new Vector2(140, 38), () => Request("summary"));
-        tasksButton = ButtonAt(rightColumn, "整理待辦", new Vector2(0, 1), new Vector2(300, -172), new Vector2(140, 38), () => Request("tasks"));
-        export = ButtonAt(rightColumn, "匯出結果", new Vector2(0, 1), new Vector2(450, -172), new Vector2(140, 38), Export);
-        ButtonAt(rightColumn, "查看建議", new Vector2(0, 1), new Vector2(0, -223), new Vector2(140, 34), () => ShowResult(answerJson));
-        ButtonAt(rightColumn, "查看摘要", new Vector2(0, 1), new Vector2(150, -223), new Vector2(140, 34), () => ShowResult(summaryJson));
-        ButtonAt(rightColumn, "查看待辦", new Vector2(0, 1), new Vector2(300, -223), new Vector2(140, 34), () => OpenCalendar());
-        photo = ButtonAt(rightColumn, "拍照辨識", new Vector2(0, 1), new Vector2(450, -223), new Vector2(140, 34), () => StartCoroutine(RecognizePhoto()));
-        readOriginal = ButtonAt(rightColumn, "朗讀原文", new Vector2(0, 1), new Vector2(0, -267), new Vector2(140, 34), () => ReadPhotoText(true));
-        readTranslation = ButtonAt(rightColumn, "朗讀翻譯", new Vector2(0, 1), new Vector2(150, -267), new Vector2(140, 34), () => ReadPhotoText(false));
-        stopReading = ButtonAt(rightColumn, "停止朗讀", new Vector2(0, 1), new Vector2(300, -267), new Vector2(140, 34), () => speech?.Stop());
+        ask = ButtonAt(rightColumn, "Ask AI", new Vector2(0, 1), new Vector2(0, -172), new Vector2(140, 38), () => Request("ask"));
+        summary = ButtonAt(rightColumn, "Summarize", new Vector2(0, 1), new Vector2(150, -172), new Vector2(140, 38), () => Request("summary"));
+        tasksButton = ButtonAt(rightColumn, "Action Items", new Vector2(0, 1), new Vector2(300, -172), new Vector2(140, 38), () => Request("tasks"));
+        export = ButtonAt(rightColumn, "Export Results", new Vector2(0, 1), new Vector2(450, -172), new Vector2(140, 38), Export);
+        ButtonAt(rightColumn, "View Advice", new Vector2(0, 1), new Vector2(0, -223), new Vector2(140, 34), () => ShowResult(answerJson));
+        ButtonAt(rightColumn, "View Summary", new Vector2(0, 1), new Vector2(150, -223), new Vector2(140, 34), () => ShowResult(summaryJson));
+        ButtonAt(rightColumn, "View Calendar", new Vector2(0, 1), new Vector2(300, -223), new Vector2(140, 34), () => OpenCalendar());
+        photo = ButtonAt(rightColumn, "Photo to Text", new Vector2(0, 1), new Vector2(450, -223), new Vector2(140, 34), () => StartCoroutine(RecognizePhoto()));
+        readOriginal = ButtonAt(rightColumn, "Read Original", new Vector2(0, 1), new Vector2(0, -267), new Vector2(140, 34), () => ReadPhotoText(true));
+        readTranslation = ButtonAt(rightColumn, "Read Translation", new Vector2(0, 1), new Vector2(150, -267), new Vector2(140, 34), () => ReadPhotoText(false));
+        stopReading = ButtonAt(rightColumn, "Stop Reading", new Vector2(0, 1), new Vector2(300, -267), new Vector2(140, 34), () => speech?.Stop());
         output = ScrollingText(rightColumn, "Results", 314, 66, out scroll, 21);
         status = Label(rightColumn, "Anyone can ask. While you record, answers also use the conversation.", 17, Vector2.zero, Vector2.zero);
         Stretch(status.rectTransform, Vector2.zero, new Vector2(1, 0), new Vector2(0, 2), new Vector2(0, 60));
-        microphone = ButtonAt(panel.transform, "麥克風：開", Vector2.zero, new Vector2(22, 51), new Vector2(160, 38), () => toggleMicrophone?.Invoke());
+        microphone = ButtonAt(panel.transform, "Mic: On", Vector2.zero, new Vector2(22, 51), new Vector2(160, 38), () => toggleMicrophone?.Invoke());
         microphoneLabel = microphone.GetComponentInChildren<Text>();
-        record = ButtonAt(panel.transform, "開始錄音", Vector2.zero, new Vector2(196, 51), new Vector2(155, 38), () => toggleRecording?.Invoke());
+        record = ButtonAt(panel.transform, "Start Recording", Vector2.zero, new Vector2(196, 51), new Vector2(155, 38), () => toggleRecording?.Invoke());
         recordingLabel = record.GetComponentInChildren<Text>();
         var foot = Label(panel.transform, "Select the glasses video source, then click Mark Glasses.", 18, Vector2.zero, Vector2.zero);
         Stretch(foot.rectTransform, Vector2.zero, new Vector2(1, 0), new Vector2(374, 12), new Vector2(-22, 46));

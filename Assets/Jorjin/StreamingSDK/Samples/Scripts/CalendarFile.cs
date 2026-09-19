@@ -25,14 +25,32 @@ public static class CalendarFile
             Line(ics, "BEGIN:VEVENT");
             Line(ics, "UID:" + Escape(item.id) + "@jorjin-meeting");
             Line(ics, "DTSTAMP:" + stamp);
-            Line(ics, "DTSTART;VALUE=DATE:" + day.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
-            Line(ics, "DTEND;VALUE=DATE:" + day.AddDays(1).ToString("yyyyMMdd", CultureInfo.InvariantCulture));
-            Line(ics, "SUMMARY:" + Escape(item.title + "（" + item.owner + "）"));
-            Line(ics, "DESCRIPTION:" + Escape("負責人：" + item.owner + "\n期限：" + item.deadline));
+            if (TryTime(day, item.start_time, out DateTime start))
+            {
+                // Floating local time: calendars show it in the importer's time zone.
+                DateTime end = TryTime(day, item.end_time, out DateTime parsed) && parsed > start ? parsed : start.AddHours(1);
+                Line(ics, "DTSTART:" + start.ToString("yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture));
+                Line(ics, "DTEND:" + end.ToString("yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                Line(ics, "DTSTART;VALUE=DATE:" + day.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+                Line(ics, "DTEND;VALUE=DATE:" + day.AddDays(1).ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+            }
+            Line(ics, "SUMMARY:" + Escape(item.title + " (" + item.owner + ")"));
+            Line(ics, "DESCRIPTION:" + Escape("Owner: " + item.owner + "\nDue: " + item.deadline));
             Line(ics, "END:VEVENT");
         }
         Line(ics, "END:VCALENDAR");
         return ics.ToString();
+    }
+
+    private static bool TryTime(DateTime day, string value, out DateTime result)
+    {
+        result = day;
+        if (!TimeSpan.TryParseExact(value ?? "", @"hh\:mm", CultureInfo.InvariantCulture, out TimeSpan time)) return false;
+        result = day.Add(time);
+        return true;
     }
 
     private static void Line(StringBuilder ics, string text) => ics.Append(text).Append("\r\n");

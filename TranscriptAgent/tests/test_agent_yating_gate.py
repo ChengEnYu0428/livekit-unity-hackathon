@@ -111,7 +111,7 @@ class RoleTests(unittest.IsolatedAsyncioTestCase):
         packet = SimpleNamespace(topic=agent.ROLE_TOPIC, data='{"role":"expert"}'.encode(),
                                  participant=SimpleNamespace(identity="amy"))
         await transcript.handle_control(packet)
-        self.assertEqual(transcript.speaker_label("amy", "Amy"), "Amy（專家端）")
+        self.assertEqual(transcript.speaker_label("amy", "Amy"), "Amy (Expert)")
         self.assertEqual(transcript.speaker_label("bob", ""), "bob")
         packet.data = b'{"role":"admin"}'
         await transcript.handle_control(packet)

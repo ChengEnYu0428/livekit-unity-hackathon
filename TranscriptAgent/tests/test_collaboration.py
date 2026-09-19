@@ -161,6 +161,24 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actions["task"], "actions")
         self.assertEqual(len(actions["transcript"]), 2)
 
+    async def test_summary_language_follows_the_conversation(self):
+        self.model.generate.return_value = {"problem_summary": ["沒有畫面"], "performed_actions": [],
+            "current_status": "等待確認", "action_items": [], "next_steps": []}
+        await self.summary()  # setUp transcript is Chinese
+        self.assertEqual(self.model.generate.call_args.args[0]["summary_language"], "zh")
+        data = b"".join(base64.b64decode(p["data"]) for p, _ in self.sent if p["type"] == "result_chunk")
+        result = json.loads(data)
+        self.assertEqual(result["language"], "zh")
+        self.assertIn("問題摘要", result["display_text"])
+
+        await self.service.begin("session-en", "owner")
+        self.service.add_segment("session-en", "Tom", "The remote side cannot see my camera, please check it.")
+        self.sent.clear()
+        await self.summary("s2", sid="session-en")
+        self.assertEqual(self.model.generate.call_args.args[0]["summary_language"], "en")
+        data = b"".join(base64.b64decode(p["data"]) for p, _ in self.sent if p["type"] == "result_chunk")
+        self.assertIn("Problem Summary", json.loads(data)["display_text"])
+
     async def test_unconfigured_model_is_explicit_error(self):
         self.service.model = ModelClient(ModelSettings())
         await self.ask()
@@ -225,9 +243,9 @@ class TaskBoardTests(unittest.TestCase):
                                 "deadline": "星期三以前", "deadline_date": "2026-09-23"}])
         text = tasks_display_text(dict(tasks=board.snapshot(), calendar_events=board.calendar(),
                                        actions=actions, message="已建立一筆待辦。"))
-        self.assertIn("• 做簡報｜負責人：小美｜期限：星期三以前（2026-09-23）", text)
-        self.assertIn("2026-09-23（星期三）  做簡報 — 小美", text)
-        self.assertIn("新增：做簡報", text)
+        self.assertIn("• 做簡報 | Owner: 小美 | Due: 星期三以前 (2026-09-23)", text)
+        self.assertIn("2026-09-23 (Wed)  做簡報 — 小美", text)
+        self.assertIn("Added: 做簡報", text)
 
 
 class TaskRequestTests(unittest.IsolatedAsyncioTestCase):
@@ -278,6 +296,57 @@ class TaskRequestTests(unittest.IsolatedAsyncioTestCase):
         await self.request("", sender="owner", sid="session-a", rid="t2")
         self.assertEqual(self.model.generate.await_count, 1)
         self.assertIn("尚未有新的逐字稿", self.sent[-1][0]["message"])
+
+
+class LiveTranslationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.sent = []
+        async def send(packet, destination):
+            self.sent.append((packet, destination))
+        self.model = AsyncMock()
+        self.model.settings = ModelSettings(True, "", "test-model")
+        self.model.generate.side_effect = lambda task: {"translations": [
+            {"id": line["id"], "source_language": "zh", "translation": "EN:" + line["text"]}
+            for line in task["lines"]]}
+        self.service = CollaborationService(send, self.model)
+        await self.service.begin("s", "owner")
+
+    async def asyncTearDown(self):
+        await self.service.close()
+
+    async def toggle(self, who, state):
+        await self.service.handle(dict(action="translate", request_id="t", question=state), who)
+
+    async def drain(self):
+        if self.service.translator.worker:
+            await self.service.translator.worker
+
+    async def test_only_subscribers_receive_captions_and_lines_are_batched(self):
+        self.service.add_segment("s", "小美（場域端）", "先關閉電源")
+        await self.drain()
+        self.model.generate.assert_not_awaited()  # nobody listening, nothing billed
+        await self.toggle("expert", "on")
+        self.assertEqual(self.sent[-1][0], dict(self.sent[-1][0], type="translation_state", enabled=True))
+        self.service.add_segment("s", "小美（場域端）", "先關閉電源")
+        self.service.add_segment("s", "小美（場域端）", "再更換濾網")
+        await self.drain()
+        self.assertEqual(self.model.generate.await_count, 1)
+        captions = [(p, d) for p, d in self.sent if p["type"] == "translation"]
+        self.assertEqual([p["translation"] for p, _ in captions], ["EN:先關閉電源", "EN:再更換濾網"])
+        self.assertTrue(all(d == "expert" for _, d in captions))
+        await self.toggle("expert", "off")
+        self.service.add_segment("s", "小美（場域端）", "好了")
+        await self.drain()
+        self.assertEqual(self.model.generate.await_count, 1)
+
+    async def test_failed_translation_still_shows_original(self):
+        self.model.generate.side_effect = RuntimeError("down")
+        await self.toggle("viewer", "on")
+        self.service.add_segment("s", "Tom", "Turn it off first")
+        await self.drain()
+        caption = self.sent[-1][0]
+        self.assertEqual((caption["type"], caption["translation"], caption["source_language"]),
+                         ("translation", "", "en"))
 
 
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
@@ -335,6 +404,39 @@ class OcrTests(unittest.IsolatedAsyncioTestCase):
         await self.photo()
         self.assertEqual(self.sent[-1][0]["type"], "error")
         self.assertIn("沒有可辨識的文字", self.sent[-1][0]["message"])
+
+    async def test_photo_with_speech_builds_timed_calendar(self):
+        await self.service.begin("session-a", "owner")
+        self.service.add_segment("session-a", "小美（場域端）", "我想根據這個圖片來建立行事曆")
+        self.model.generate.return_value = {"intent": "calendar", "original_text": "9/26 09:00-10:00 報到",
+            "operations": [{"op": "create", "title": "報到", "owner": "全體", "deadline": "9/26 09:00-10:00",
+                            "deadline_date": "2026-09-26", "start_time": "09:00", "end_time": "10:00"}],
+            "message": "已從行程表建立 1 個行程。"}
+        with patch("collaboration.PHOTO_SPEECH_WAIT", 0):
+            await self.photo()
+        task, image = self.model.generate.call_args.args
+        self.assertEqual(task["task"], "photo")
+        self.assertIn("建立行事曆", task["recent_speech"][-1]["text"])
+        self.assertNotIn("at", task["recent_speech"][-1])
+        result = self.result()
+        self.assertEqual(result["kind"], "tasks")
+        event = result["calendar_events"][0]
+        self.assertEqual((event["date"], event["start_time"], event["end_time"]), ("2026-09-26", "09:00", "10:00"))
+        self.assertIn("09:00–10:00  報到", result["display_text"])
+
+    async def test_typed_question_about_photo_is_answered(self):
+        self.model.generate.return_value = {"intent": "answer", "answer": "第二天 17:00 結束。",
+                                            "original_text": "Day 2 ... 17:00 閉幕"}
+        await self.service.handle_image(JPEG, {"request_id": "p1", "question": "第二天幾點結束？"}, "viewer")
+        await self.service.task
+        self.assertEqual(self.model.generate.call_args.args[0]["instruction"], "第二天幾點結束？")
+        result = self.result()
+        self.assertEqual(result["kind"], "answer")
+        self.assertIn("17:00", result["display_text"])
+
+    async def test_photo_without_speech_or_text_stays_plain_translation(self):
+        await self.photo()
+        self.assertEqual(self.model.generate.call_args.args[0]["task"], "ocr")
 
     async def test_duplicate_photo_is_not_billed_twice(self):
         await self.photo()

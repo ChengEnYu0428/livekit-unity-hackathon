@@ -78,6 +78,13 @@ public sealed class LiveKitMeetingView : MonoBehaviour
     private Vector2 lastGridSize;
     private bool lastLandscape;
     private int lastTileCount = -1;
+    // Full-screen call: the join panel is hidden, so the call bar also offers
+    // camera, screen share and leave.
+    private bool fullScreen;
+    private Button cameraToggleButton, shareButton, leaveButton;
+    private TMP_Text cameraToggleLabel, shareLabel;
+    private Action cameraToggleRequested, shareRequested, leaveRequested;
+    private const float CompactBarWidth = 624f, FullBarWidth = 952f;
 
     public static LiveKitMeetingView Create(
         Transform canvasTransform,
@@ -167,6 +174,13 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         likeButton = CreateReactionButton(reactionBar, "LIKE", JJReactionType.LIKE);
         clapButton = CreateReactionButton(reactionBar, "CLAP", JJReactionType.CLAP);
         transcriptButton = CreateTranscriptButton(reactionBar);
+        cameraToggleButton = CreateCallButton(reactionBar, "CAM ON", LiveKitMeetingStyle.SurfaceRaised,
+            () => cameraToggleRequested?.Invoke(), out cameraToggleLabel);
+        shareButton = CreateCallButton(reactionBar, "SHARE", LiveKitMeetingStyle.SurfaceRaised,
+            () => shareRequested?.Invoke(), out shareLabel);
+        leaveButton = CreateCallButton(reactionBar, "LEAVE", LiveKitMeetingStyle.Danger,
+            () => leaveRequested?.Invoke(), out _);
+        SetCallButtonsVisible(false);
 
         GameObject advancedBarObject = CreateRect("Advanced Controls", transform);
         advancedBar = (RectTransform)advancedBarObject.transform;
@@ -192,56 +206,56 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         previewButton = CreateAdvancedButton(
             advancedBar,
             "Preview Button",
-            "預覽\n關閉",
+            "PREVIEW\nOFF",
             new Color32(76, 86, 106, 255),
             AdvancedControl.Preview,
             out previewButtonLabel);
         cameraButton = CreateAdvancedButton(
             advancedBar,
             "Camera Button",
-            "鏡頭\n後鏡頭/AR",
+            "CAMERA\nREAR/AR",
             new Color32(62, 92, 135, 255),
             AdvancedControl.Camera,
             out cameraButtonLabel);
         remoteAudioButton = CreateAdvancedButton(
             advancedBar,
             "Remote Audio Button",
-            "對方麥克風\n開啟",
+            "REMOTE MIC\nON",
             new Color32(32, 128, 72, 255),
             AdvancedControl.RemoteAudio,
             out remoteAudioButtonLabel);
         remoteVideoButton = CreateAdvancedButton(
             advancedBar,
             "Remote Video Button",
-            "對方視訊\n開啟",
+            "REMOTE VIDEO\nON",
             new Color32(32, 112, 156, 255),
             AdvancedControl.RemoteVideo,
             out remoteVideoButtonLabel);
         remoteQualityButton = CreateAdvancedButton(
             advancedBar,
             "Remote Quality Button",
-            "畫質\n高",
+            "QUALITY\nHIGH",
             new Color32(93, 80, 160, 255),
             AdvancedControl.RemoteQuality,
             out remoteQualityButtonLabel);
         videoProfileButton = CreateAdvancedButton(
             advancedBar,
             "Video Profile Button",
-            "視訊\n720P",
+            "VIDEO\n720P",
             new Color32(28, 105, 128, 255),
             AdvancedControl.VideoProfile,
             out videoProfileButtonLabel);
         microphoneInputButton = CreateAdvancedButton(
             advancedBar,
             "Microphone Input Button",
-            "麥克風來源\n系統預設",
+            "MIC INPUT\nSYSTEM",
             new Color32(41, 98, 122, 255),
             AdvancedControl.MicrophoneInput,
             out microphoneInputButtonLabel);
         pcmObserverButton = CreateAdvancedButton(
             advancedBar,
             "PCM Observer Button",
-            "PCM\n關閉",
+            "PCM\nOFF",
             new Color32(76, 86, 106, 255),
             AdvancedControl.PcmObserver,
             out pcmObserverButtonLabel);
@@ -505,37 +519,37 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         SetAdvancedButtonState(
             previewButton,
             previewButtonLabel,
-            previewOn ? "預覽\n開啟" : "預覽\n關閉",
+            previewOn ? "PREVIEW\nON" : "PREVIEW\nOFF",
             previewOn,
             new Color32(32, 128, 72, 255));
         SetAdvancedButtonState(
             cameraButton,
             cameraButtonLabel,
-            frontCamera ? "鏡頭\n前鏡頭" : "鏡頭\n後鏡頭/AR",
+            frontCamera ? "CAMERA\nFRONT" : "CAMERA\nREAR/AR",
             frontCamera,
             new Color32(30, 125, 180, 255));
         SetAdvancedButtonState(
             remoteAudioButton,
             remoteAudioButtonLabel,
-            remoteAudioMuted ? "對方麥克風\n關閉" : "對方麥克風\n開啟",
+            remoteAudioMuted ? "REMOTE MIC\nOFF" : "REMOTE MIC\nON",
             !remoteAudioMuted,
             new Color32(32, 128, 72, 255));
         SetAdvancedButtonState(
             remoteVideoButton,
             remoteVideoButtonLabel,
-            remoteVideoMuted ? "對方視訊\n關閉" : "對方視訊\n開啟",
+            remoteVideoMuted ? "REMOTE VIDEO\nOFF" : "REMOTE VIDEO\nON",
             !remoteVideoMuted,
             new Color32(32, 112, 156, 255));
         SetAdvancedButtonState(
             remoteQualityButton,
             remoteQualityButtonLabel,
-            lowQuality ? "畫質\n低" : "畫質\n高",
+            lowQuality ? "QUALITY\nLOW" : "QUALITY\nHIGH",
             !lowQuality,
             new Color32(93, 80, 160, 255));
         SetAdvancedButtonState(
             videoProfileButton,
             videoProfileButtonLabel,
-            "視訊\n" + (string.IsNullOrWhiteSpace(videoProfile)
+            "VIDEO\n" + (string.IsNullOrWhiteSpace(videoProfile)
                 ? "720P"
                 : videoProfile),
             true,
@@ -543,7 +557,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         SetAdvancedButtonState(
             pcmObserverButton,
             pcmObserverButtonLabel,
-            pcmEnabled ? "PCM\n開啟" : "PCM\n關閉",
+            pcmEnabled ? "PCM\nON" : "PCM\nOFF",
             pcmEnabled,
             new Color32(168, 96, 32, 255));
         RefreshViewVisibility();
@@ -610,8 +624,8 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         if (transcriptButton == null || transcriptButtonLabel == null) return;
 
         transcriptButtonLabel.text = recording
-            ? (startingOrSaving ? "儲存中…" : "停止並儲存")
-            : (startingOrSaving ? "啟動中…" : "開始逐字稿");
+            ? (startingOrSaving ? "SAVING..." : "STOP & SAVE")
+            : (startingOrSaving ? "STARTING..." : "START TRANSCRIPT");
         LiveKitMeetingStyle.ApplyRounded(
             transcriptButton.GetComponent<Image>(),
             recording ? LiveKitMeetingStyle.Danger : new Color32(13, 148, 136, 255),
@@ -649,7 +663,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         localMicrophoneMuted = muted;
         if (microphoneButton != null && microphoneButtonLabel != null)
         {
-            microphoneButtonLabel.text = muted ? "麥克風\n關閉" : "麥克風\n開啟";
+            microphoneButtonLabel.text = muted ? "MIC\nOFF" : "MIC\nON";
             LiveKitMeetingStyle.ApplyRounded(
                 microphoneButton.GetComponent<Image>(),
                 muted ? LiveKitMeetingStyle.Danger : LiveKitMeetingStyle.Success,
@@ -676,14 +690,14 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         SetAdvancedButtonState(
             microphoneInputButton,
             microphoneInputButtonLabel,
-            "麥克風來源\n" + compactName,
+            "MIC INPUT\n" + compactName,
             true,
             new Color32(41, 98, 122, 255));
     }
 
     private static string CompactDeviceName(string deviceName)
     {
-        if (string.IsNullOrWhiteSpace(deviceName)) return "系統預設";
+        if (string.IsNullOrWhiteSpace(deviceName)) return "SYSTEM";
 
         string value = deviceName.Trim();
         const int maximumLength = 15;
@@ -823,7 +837,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
     public void SetParticipantRole(string identity, string role)
     {
         if (string.IsNullOrWhiteSpace(identity)) return;
-        roleLabels[identity] = role == "expert" ? "專家端" : "場域端";
+        roleLabels[identity] = role == "expert" ? "Expert" : "Field";
         if (tiles.TryGetValue(identity, out LiveKitParticipantTile tile) && tile != null)
             tile.SetDisplayName(DisplayNameFor(identity));
     }
@@ -913,7 +927,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         var text = labelObject.AddComponent<TextMeshProUGUI>();
         // The bundled LiberationSans SDF font has no emoji glyphs. Keeping
         // these labels text-only avoids the square placeholder seen in builds.
-        text.text = reaction == JJReactionType.LIKE ? "讚" : "拍手";
+        text.text = reaction == JJReactionType.LIKE ? "LIKE" : "CLAP";
         text.fontSize = 20f;
         text.fontStyle = FontStyles.Bold;
         text.alignment = TextAlignmentOptions.Center;
@@ -922,6 +936,77 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         text.enableAutoSizing = true;
         text.fontSizeMin = 12f;
         text.fontSizeMax = 20f;
+        return button;
+    }
+
+    /// <summary>Camera / share / leave actions used when the call fills the screen.</summary>
+    public void ConfigureCallControls(Action toggleCamera, Action toggleShare, Action leave)
+    {
+        cameraToggleRequested = toggleCamera;
+        shareRequested = toggleShare;
+        leaveRequested = leave;
+    }
+
+    /// <summary>Uses the whole screen for the call (after joining) or leaves room for the join panel.</summary>
+    public void SetFullScreen(bool value)
+    {
+        fullScreen = value;
+        SetCallButtonsVisible(value);
+        if (rootRect != null) UpdateResponsiveRect(true);
+    }
+
+    public void SetCameraOn(bool on)
+    {
+        if (cameraToggleLabel != null) cameraToggleLabel.text = on ? "CAM ON" : "CAM OFF";
+        if (cameraToggleButton != null)
+            LiveKitMeetingStyle.ApplyRounded(cameraToggleButton.GetComponent<Image>(),
+                on ? LiveKitMeetingStyle.SurfaceRaised : LiveKitMeetingStyle.Danger, true);
+    }
+
+    public void SetSharing(bool sharing)
+    {
+        if (shareLabel != null) shareLabel.text = sharing ? "STOP SHARE" : "SHARE";
+        if (shareButton != null)
+            LiveKitMeetingStyle.ApplyRounded(shareButton.GetComponent<Image>(),
+                sharing ? LiveKitMeetingStyle.Accent : LiveKitMeetingStyle.SurfaceRaised, true);
+    }
+
+    private void SetCallButtonsVisible(bool visible)
+    {
+        if (cameraToggleButton != null) cameraToggleButton.gameObject.SetActive(visible);
+        if (shareButton != null) shareButton.gameObject.SetActive(visible);
+        if (leaveButton != null) leaveButton.gameObject.SetActive(visible);
+    }
+
+    private Button CreateCallButton(Transform parent, string label, Color32 color, Action click, out TMP_Text labelText)
+    {
+        var buttonObject = new GameObject(label + " Button", typeof(RectTransform), typeof(CanvasRenderer),
+            typeof(Image), typeof(Button), typeof(LayoutElement));
+        buttonObject.transform.SetParent(parent, false);
+        LiveKitMeetingStyle.ApplyRounded(buttonObject.GetComponent<Image>(), color, true);
+        var button = buttonObject.GetComponent<Button>();
+        LiveKitMeetingStyle.ConfigureButton(button);
+        button.onClick.AddListener(() => click());
+        var layout = buttonObject.GetComponent<LayoutElement>();
+        layout.preferredWidth = 100f;
+        layout.preferredHeight = 50f;
+        GameObject labelObject = CreateRect("Label", buttonObject.transform);
+        RectTransform labelRect = (RectTransform)labelObject.transform;
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = new Vector2(6f, 3f);
+        labelRect.offsetMax = new Vector2(-6f, -3f);
+        var text = labelObject.AddComponent<TextMeshProUGUI>();
+        text.text = label;
+        text.fontSize = 18f;
+        text.fontStyle = FontStyles.Bold;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = Color.white;
+        text.raycastTarget = false;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 11f;
+        text.fontSizeMax = 18f;
+        labelText = text;
         return button;
     }
 
@@ -1026,7 +1111,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         labelRect.offsetMin = new Vector2(5f, 2f);
         labelRect.offsetMax = new Vector2(-5f, -2f);
         microphoneButtonLabel = labelObject.AddComponent<TextMeshProUGUI>();
-        microphoneButtonLabel.text = "麥克風\n開啟";
+        microphoneButtonLabel.text = "MIC\nON";
         microphoneButtonLabel.fontSize = 17f;
         microphoneButtonLabel.fontStyle = FontStyles.Bold;
         microphoneButtonLabel.alignment = TextAlignmentOptions.Center;
@@ -1070,7 +1155,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         labelRect.offsetMin = new Vector2(6f, 3f);
         labelRect.offsetMax = new Vector2(-6f, -3f);
         transcriptButtonLabel = labelObject.AddComponent<TextMeshProUGUI>();
-        transcriptButtonLabel.text = "開始逐字稿";
+        transcriptButtonLabel.text = "START TRANSCRIPT";
         transcriptButtonLabel.fontSize = 18f;
         transcriptButtonLabel.fontStyle = FontStyles.Bold;
         transcriptButtonLabel.alignment = TextAlignmentOptions.Center;
@@ -1085,6 +1170,13 @@ public sealed class LiveKitMeetingView : MonoBehaviour
     private void LateUpdate()
     {
         UpdateResponsiveRect(false);
+        if (reactionBar != null && rootRect != null && !embeddedMode)
+        {
+            // The wider full-screen bar still has to fit an upright phone.
+            float wanted = fullScreen ? FullBarWidth : CompactBarWidth;
+            float width = Mathf.Min(wanted, Mathf.Max(300f, rootRect.rect.width - 24f));
+            if (!Mathf.Approximately(reactionBar.sizeDelta.x, width)) reactionBar.sizeDelta = new Vector2(width, 0f);
+        }
         UpdateGridLayout();
     }
 
@@ -1095,7 +1187,12 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         if (!force && landscape == lastLandscape) return;
         lastLandscape = landscape;
 
-        if (landscape)
+        if (fullScreen)
+        {
+            rootRect.anchorMin = new Vector2(0.012f, 0.02f);
+            rootRect.anchorMax = new Vector2(0.988f, 0.98f);
+        }
+        else if (landscape)
         {
             rootRect.anchorMin = new Vector2(0.33f, 0.05f);
             rootRect.anchorMax = new Vector2(0.98f, 0.95f);

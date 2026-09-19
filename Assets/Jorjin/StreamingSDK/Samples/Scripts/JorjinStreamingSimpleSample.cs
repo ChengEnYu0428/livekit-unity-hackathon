@@ -134,10 +134,13 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
     private LiveKitMeetingView meetingView;
     private LiveKitDemo2View demo2View;
     private LiveKitCollaborationPanel collaborationPanel;
+    private LiveKitLiveTranslationView liveTranslation;
     private const string MeetingRoleKey = "jorjin.meeting.role";
     private string meetingRole = "field";
     private readonly Dictionary<string, string> participantRoles = new();
     private Button fieldRoleButton, expertRoleButton;
+    // Join-screen UI (token inputs, buttons, log) hidden while in a meeting.
+    private readonly List<GameObject> joinScreenObjects = new();
     private readonly List<TranscriptEntry> transcriptEntries = new();
     private readonly HashSet<int> transcriptSequences = new();
     private bool transcriptAgentReady;
@@ -208,8 +211,17 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             (action, requestId, question) => StreamingSDK.SendCollaborationRequest(action, transcriptSessionId, requestId, question),
             () => transcriptSessionId,
             () => joined && StreamingSDK.IsConnected);
+        liveTranslation = gameObject.AddComponent<LiveKitLiveTranslationView>();
+        liveTranslation.Configure(
+            state => StreamingSDK.SendCollaborationRequest("translate", "", Guid.NewGuid().ToString("N"), state),
+            () => joined && StreamingSDK.IsConnected,
+            () => transcriptRecording);
+        collaborationPanel.ConfigureTranslation(
+            () => liveTranslation.Enabled,
+            liveTranslation.Toggle,
+            liveTranslation.SetWorkspaceMode);
         collaborationPanel.ConfigurePhoto(
-            (jpeg, requestId, sent) => StreamingSDK.SendCollaborationImage(jpeg, requestId, sent));
+            (jpeg, requestId, sent, instruction) => StreamingSDK.SendCollaborationImage(jpeg, requestId, sent, instruction));
         collaborationPanel.ConfigureMeeting(
             sources => meetingView?.GetCollaborationSources(sources),
             ReadCollaborationMeetingState,
@@ -515,6 +527,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             initialized = false;
             joined = false;
             meetingView?.SetConnected(false);
+            SetMeetingLayout(false);
         }
 
         liveKitUrl = session.server_url;
@@ -626,6 +639,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
                 initialized = false;
                 joined = false;
                 meetingView?.SetConnected(false);
+                SetMeetingLayout(false);
             }
             companyBootstrapCoroutine =
                 StartCoroutine(BootstrapCompanyMeeting());
@@ -971,6 +985,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         remoteUids.Clear();
         meetingView?.SetSdkReady(false);
         meetingView?.SetConnected(false);
+        SetMeetingLayout(false);
         RefreshAdvancedControls();
         AddLog("Dispose SDK.");
         RefreshStatus();
@@ -1002,6 +1017,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         remoteUids.Clear();
         DisablePcmObserver();
         meetingView?.SetConnected(false);
+        SetMeetingLayout(false);
         RefreshAdvancedControls();
         AddLog($"LeaveChannel result: {result}");
         RefreshStatus();
@@ -1023,6 +1039,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         if (!EnsureInitialized()) return;
 
         localVideoEnabled = !localVideoEnabled;
+        meetingView?.SetCameraOn(localVideoEnabled);
         StreamingSDK.EnableLocalVideo(localVideoEnabled);
         meetingView?.SetLocalVideoVisible(localVideoEnabled && joined);
         AddLog($"{(localVideoEnabled ? "Enable" : "Disable")} local video.");
@@ -1036,6 +1053,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             ? StreamingSDK.StopShareScreen()
             : StreamingSDK.ShareScreen(new JJChannelMediaOptions());
         if (result == 0) screenSharing = !screenSharing;
+        meetingView?.SetSharing(screenSharing);
         AddLog($"{(screenSharing ? "Start" : "Stop")} screen share result: {result}");
     }
 
@@ -1550,6 +1568,33 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             $"{System.Threading.Volatile.Read(ref receivedPcmFrameCount)} frame(s)";
     }
 
+    /// <summary>Top-level canvas children that make up the join screen (left panel).</summary>
+    private void CollectJoinScreenObjects(Canvas canvas)
+    {
+        joinScreenObjects.Clear();
+        void Add(Component part)
+        {
+            if (part == null) return;
+            Transform top = part.transform;
+            while (top.parent != null && top.parent != canvas.transform) top = top.parent;
+            if (top.parent != canvas.transform || meetingView != null && top == meetingView.transform) return;
+            if (!joinScreenObjects.Contains(top.gameObject)) joinScreenObjects.Add(top.gameObject);
+        }
+        Add(channelNameInput); Add(tokenInput); Add(userIdInput);
+        Add(initializeButton); Add(joinChannelButton); Add(statusText); Add(logText);
+        Transform backdrop = canvas.transform.Find("Custom Connection Panel");
+        if (backdrop != null) Add(backdrop);
+    }
+
+    /// <summary>In a meeting the call fills the screen; the join panel returns after leaving.</summary>
+    private void SetMeetingLayout(bool inMeeting)
+    {
+        foreach (GameObject part in joinScreenObjects) if (part != null) part.SetActive(!inMeeting);
+        meetingView?.SetFullScreen(inMeeting);
+        meetingView?.SetCameraOn(localVideoEnabled);
+        meetingView?.SetSharing(screenSharing);
+    }
+
     private void ApplyCamera(bool front)
     {
         var config = new JJCameraCapturerConfiguration();
@@ -1558,7 +1603,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         RefreshAdvancedControls();
     }
 
-    /// <summary>Two-button 場域端 / 專家端 selector above the Channel field.</summary>
+    /// <summary>Two-button Field / Expert selector above the Channel field.</summary>
     private void CreateRoleSelector()
     {
         Transform row = channelNameInput != null ? channelNameInput.transform.parent : null;
@@ -1577,8 +1622,8 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         layout.childForceExpandWidth = layout.childForceExpandHeight = true;
         var element = selector.GetComponent<LayoutElement>();
         element.preferredHeight = 64f; element.flexibleHeight = 0f; element.flexibleWidth = 1f;
-        fieldRoleButton = CreateRoleButton(selector.transform, "我是 場域端", "field");
-        expertRoleButton = CreateRoleButton(selector.transform, "我是 專家端", "expert");
+        fieldRoleButton = CreateRoleButton(selector.transform, "I'm Field Side", "field");
+        expertRoleButton = CreateRoleButton(selector.transform, "I'm the Expert", "expert");
         RefreshRoleButtons();
     }
 
@@ -1622,7 +1667,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             if (initialized) ApplyCamera(role == "expert");
         }
         if (!string.IsNullOrWhiteSpace(localIdentity)) meetingView?.SetParticipantRole(localIdentity, role);
-        AddLog(role == "expert" ? "身分：專家端" : "身分：場域端");
+        AddLog(role == "expert" ? "Role: Expert" : "Role: Field");
     }
 
     private void HandleParticipantRole(string identity, string role)
@@ -1692,13 +1737,13 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         // because LiveKit uses them as room name, token and participant identity.
         HideConnectionInputRow(appIdInput);
 
-        SetButtonLabel(initializeButton, "初始化");
-        SetButtonLabel(disposeButton, "重設");
-        SetButtonLabel(joinChannelButton, "加入會議");
-        SetButtonLabel(leaveChannelButton, "離開會議");
-        SetButtonLabel(toggleAudioButton, "麥克風");
-        SetButtonLabel(toggleVideoButton, "鏡頭");
-        SetButtonLabel(shareScreenButton, "分享畫面");
+        SetButtonLabel(initializeButton, "Initialize");
+        SetButtonLabel(disposeButton, "Reset");
+        SetButtonLabel(joinChannelButton, "Join Meeting");
+        SetButtonLabel(leaveChannelButton, "Leave Meeting");
+        SetButtonLabel(toggleAudioButton, "Microphone");
+        SetButtonLabel(toggleVideoButton, "Camera");
+        SetButtonLabel(shareScreenButton, "Share Screen");
         CreateRoleSelector();
 
         // Participant tiles contain their own names, so the old fixed video
@@ -1718,6 +1763,8 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             ToggleAudio,
             ToggleTranscript,
             HandleAdvancedControl);
+        meetingView?.ConfigureCallControls(ToggleVideo, ToggleScreenShare, LeaveChannel);
+        CollectJoinScreenObjects(canvas);
         SetMicrophoneUi(audioMuted);
         SetTranscriptUi(false);
         meetingView?.SetSdkReady(initialized);
@@ -2463,6 +2510,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             sample.meetingView?.SetSdkReady(sample.initialized);
             sample.meetingView?.SetConnected(true);
             sample.meetingView?.SetLocalParticipant(localIdentity);
+            sample.SetMeetingLayout(true);
             sample.SetMicrophoneUi(sample.audioMuted);
             sample.AddLog($"LiveKit connected room={roomName}, identity={localIdentity}");
             sample.RefreshStatus();
@@ -2480,6 +2528,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
             sample.DisablePcmObserver();
             sample.AddLog($"LiveKit disconnected room={roomName}");
             sample.meetingView?.SetConnected(false);
+            sample.SetMeetingLayout(false);
             sample.RefreshAdvancedControls();
             sample.RefreshStatus();
         }
@@ -2529,6 +2578,7 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
         public override void OnLiveKitScreenShareChanged(bool sharing)
         {
             sample.screenSharing = sharing;
+            sample.meetingView?.SetSharing(sharing);
             sample.AddLog($"LiveKit screen sharing: {sharing}");
         }
 
@@ -2547,7 +2597,10 @@ public class JorjinStreamingSimpleSample : MonoBehaviour
 
         public override void OnLiveKitCollaborationPacket(string participantIdentity, string json)
         {
-            sample.collaborationPanel?.Receive(participantIdentity, json);
+            if (LiveKitLiveTranslationView.IsTranslationPacket(json))
+                sample.liveTranslation?.Receive(json);
+            else
+                sample.collaborationPanel?.Receive(participantIdentity, json);
         }
 
         public override void OnLiveKitTranscriptAgentStatus(

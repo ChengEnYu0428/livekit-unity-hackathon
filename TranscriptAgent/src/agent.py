@@ -32,7 +32,7 @@ from collaboration import (CollaborationService, CONTROL_TOPIC as AI_CONTROL_TOP
 CONTROL_TOPIC = "jorjin.transcript.control.v1"
 EVENT_TOPIC = "jorjin.transcript.event.v1"
 ROLE_TOPIC = "jorjin.meeting.role.v1"
-ROLE_LABELS = {"field": "場域端", "expert": "專家端"}
+ROLE_LABELS = {"field": "Field", "expert": "Expert"}
 AGENT_IDENTITY_PREFIX = "agent-"
 
 logging.basicConfig(level=logging.INFO)
@@ -202,10 +202,10 @@ class MeetingTranscript:
         await self.collaboration.handle_image(bytes(data), reader.info.attributes, sender)
 
     def speaker_label(self, identity: str, display_name: str) -> str:
-        """Speaker name with the participant's chosen role, e.g. 小美（場域端）."""
+        """Speaker name with the participant's chosen role, e.g. Amy (Field)."""
         name = display_name or identity
         role = ROLE_LABELS.get(self.roles.get(identity, ""))
-        return f"{name}（{role}）" if role else name
+        return f"{name} ({role})" if role else name
 
     async def handle_control(self, packet: rtc.DataPacket) -> None:
         if packet.topic == ROLE_TOPIC and packet.participant is not None:

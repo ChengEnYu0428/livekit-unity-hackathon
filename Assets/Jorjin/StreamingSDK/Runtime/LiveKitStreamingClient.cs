@@ -1886,7 +1886,7 @@ namespace Jorjin.Streaming
         public int SendCollaborationRequest(string action, string sessionId, string requestId, string question)
         {
             if (!Connected || room?.LocalParticipant == null ||
-                (action != "ask" && action != "summary" && action != "tasks") ||
+                (action != "ask" && action != "summary" && action != "tasks" && action != "translate") ||
                 // Questions and action items work without a recording session; summaries need one.
                 (action == "summary" && string.IsNullOrEmpty(sessionId)) ||
                 string.IsNullOrEmpty(requestId) || requestId.Length > 64 || (question?.Length ?? 0) > 2000)
@@ -1906,7 +1906,7 @@ namespace Jorjin.Streaming
         /// translation. Only the Agent receives it; the result arrives as a
         /// normal collaboration packet with the same request ID.
         /// </summary>
-        public int SendCollaborationImage(byte[] jpeg, string requestId, Action<bool> sent)
+        public int SendCollaborationImage(byte[] jpeg, string requestId, Action<bool> sent, string userInstruction = "")
         {
             if (!Connected || room?.LocalParticipant == null || jpeg == null || jpeg.Length == 0 ||
                 jpeg.Length > MaxCollaborationImageBytes || string.IsNullOrEmpty(requestId) || requestId.Length > 64)
@@ -1931,7 +1931,13 @@ namespace Jorjin.Streaming
                 MimeType = "image/jpeg",
                 Name = "photo.jpg",
                 DestinationIdentities = new List<string> { agent },
-                Attributes = new Dictionary<string, string> { ["request_id"] = requestId }
+                Attributes = new Dictionary<string, string>
+                {
+                    ["request_id"] = requestId,
+                    // What to do with the photo when nobody is recording (e.g. 「建立行事曆」).
+                    ["question"] = userInstruction == null ? "" :
+                        userInstruction.Length > 2000 ? userInstruction.Substring(0, 2000) : userInstruction
+                }
             };
             SendFileInstruction instruction;
             try { instruction = room.LocalParticipant.SendFile(path, options); }

@@ -18,6 +18,8 @@ namespace Jorjin.Streaming
     public sealed class CollaborationResult
     {
         public string kind, question, answer, current_status, display_text, model;
+        // Summary language chosen from the conversation: "zh" or "en".
+        public string language;
         // Photo text recognition ("ocr"): source/target are "zh" or "en".
         public string original_text, translated_text, source_language, target_language;
         public string[] problem_summary, performed_actions, action_items, next_steps;
@@ -31,13 +33,13 @@ namespace Jorjin.Streaming
     [Serializable]
     public sealed class CollaborationTask
     {
-        public string id, title, owner, deadline, deadline_date, created_at, updated_at;
+        public string id, title, owner, deadline, deadline_date, start_time, end_time, created_at, updated_at;
     }
 
     [Serializable]
     public sealed class CollaborationCalendarEvent
     {
-        public string id, task_id, title, owner, deadline, date;
+        public string id, task_id, title, owner, deadline, date, start_time, end_time;
     }
 
     /// <summary>Bounded, SHA-256-verified reassembly, isolated by sender and request.</summary>
