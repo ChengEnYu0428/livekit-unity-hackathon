@@ -1,0 +1,62 @@
+# Unity generated folders
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/UserSettings/
+/MemoryCaptures/
+/Recordings/
+/Assets/_Recovery/
+
+# IDE and local tooling
+/.vs/
+/.idea/
+/.vscode/
+/.agents/
+/.codex_temp/
+/.utmp/
+/.pytest_cache/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Python/.NET generated files
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/bin/
+**/obj/
+**/.pytest_cache/
+
+# Local secrets and deployment bindings
+**/.env
+**/.env.*
+!**/.env.example
+**/*-secrets.env
+**/livekit.toml
+**/recordings/
+**/*.pcm
+**/*.part
+
+# Generated application packages
+*.apk
+*.aab
+
+# Generated handoff bundle (source remains in the project root)
+/Delivery/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

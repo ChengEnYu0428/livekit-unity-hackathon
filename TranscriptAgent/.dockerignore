@@ -1,0 +1,12 @@
+.env
+.env.*
+*-secrets.env
+.git
+.venv
+__pycache__
+*.pyc
+transcripts
+recordings
+*.mp3
+*.pcm
+*.part

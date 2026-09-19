@@ -1,0 +1,114 @@
+{
+  "companies": {
+    "example-company": {
+      "display_name": "Example Company",
+      "device_key_env": "EXAMPLE_COMPANY_DEVICE_KEY",
+      "default_group": "support-l1",
+      "allow_group_override": false,
+      "allow_group_session_selection": true,
+      "members": {
+        "expert-alice": {
+          "display_name": "Alice Chen",
+          "department": "Technical Support",
+          "role": "expert",
+          "group_ids": [
+            "support-l1"
+          ],
+          "enabled": true
+        },
+        "expert-bob": {
+          "display_name": "Bob Lin",
+          "department": "Technical Support",
+          "role": "expert",
+          "group_ids": [
+            "support-l1",
+            "support-l2"
+          ],
+          "enabled": true
+        },
+        "expert-carol": {
+          "display_name": "Carol Wang",
+          "department": "Engineering",
+          "role": "senior-expert",
+          "group_ids": [
+            "support-l2"
+          ],
+          "enabled": true
+        },
+        "operations-host": {
+          "display_name": "Operations Host",
+          "department": "Operations",
+          "role": "host",
+          "group_ids": [
+            "operations"
+          ],
+          "enabled": true
+        }
+      },
+      "groups": {
+        "support-l1": {
+          "display_name": "First-line Support",
+          "room_name": "example-company-daily-support",
+          "member_ids": [
+            "expert-alice",
+            "expert-bob"
+          ],
+          "escalation_group_ids": [
+            "support-l2"
+          ],
+          "auto_join": true,
+          "enabled": true
+        },
+        "support-l2": {
+          "display_name": "Second-line Support",
+          "room_name": "example-company-senior-support",
+          "member_ids": [
+            "expert-bob",
+            "expert-carol"
+          ],
+          "escalation_group_ids": [],
+          "auto_join": true,
+          "enabled": true
+        },
+        "operations": {
+          "display_name": "Operations Team",
+          "room_name": "example-company-operations",
+          "member_ids": [
+            "operations-host"
+          ],
+          "escalation_group_ids": [
+            "support-l1"
+          ],
+          "auto_join": false,
+          "enabled": true
+        }
+      },
+      "device_assignments": {
+        "AR-GLASSES-001": "support-l1",
+        "AR-GLASSES-002": "support-l2"
+      },
+      "qr_assignments": {
+        "DEMO-QR-ASSET-LINE-01": {
+          "device_id": "AR-GLASSES-001",
+          "location_id": "factory-line-01",
+          "problem_type": "equipment-support",
+          "group_id": "support-l1",
+          "metadata": {
+            "asset_id": "ASSET-LINE-01",
+            "site_id": "SITE-TAIPEI"
+          }
+        },
+        "DEMO-QR-WAREHOUSE-01": {
+          "device_id": "AR-GLASSES-002",
+          "location_id": "warehouse-01",
+          "problem_type": "inventory-support",
+          "group_id": "support-l2",
+          "metadata": {
+            "asset_id": "WAREHOUSE-GATE-01",
+            "site_id": "SITE-TAIPEI"
+          }
+        }
+      }
+    }
+  }
+}
