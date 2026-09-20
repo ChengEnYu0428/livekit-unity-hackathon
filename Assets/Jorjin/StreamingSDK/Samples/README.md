@@ -34,7 +34,7 @@ available.
 - LiveKit-only sample initialization and room join / leave
 - Local microphone capture and remote audio playback
 - Windows / Editor webcam capture
-- Jorjin AR glasses camera capture through JJSDK on Android
+- Jorjin glasses camera capture through JJSDK on Android
 - Local and remote video rendering
 - Dynamic multi-participant meeting grid
 - Microphone ON / OFF status
@@ -74,7 +74,7 @@ local/remote audio-stat callbacks listed in `StreamingEventHandler` are mapped
 from LiveKit events. LiveKit identities are strings; legacy `uint uid` values
 are deterministic compatibility IDs for the current Session.
 
-On Android, `GetVideoDevices` also exposes the JJSDK AR-glasses camera.
+On Android, `GetVideoDevices` also exposes the JJSDK glasses camera.
 Unity does not provide portable speaker-output enumeration, so the LiveKit
 playback-device APIs return unsupported and use the operating-system default.
 `SetClientRole(AUDIENCE)` unpublishes local tracks, while actual publish
@@ -82,7 +82,7 @@ permission remains controlled by the server-issued LiveKit token.
 
 `SetVideoEncoderConfiguration` controls Unity camera request size/FPS and the
 LiveKit maximum bitrate. Camera publications enable simulcast so
-`SetRemoteVideoStreamType(uid, LOW/HIGH)` can select a remote layer. AR-glasses
+`SetRemoteVideoStreamType(uid, LOW/HIGH)` can select a remote layer. Glasses
 camera resolution remains the native resolution supplied by its camera SDK;
 the LiveKit bitrate/FPS limits still apply.
 
@@ -112,7 +112,7 @@ On `JorjinStreamingSimpleSample`:
 2. Set **Meeting Session Api Base Url** to the HTTPS service root.
 3. Set the Company ID and a rotatable Company Device Key.
 4. On an expert/meeting-host client, set **Local Member Id** to a member
-   provisioned by the server. Leave it empty on an AR-device client.
+   provisioned by the server. Leave it empty on a device client.
 5. Never put the LiveKit API secret in Unity.
 
 The included server is a runnable prototype. Its in-memory Sessions,
@@ -121,7 +121,7 @@ need durable storage, per-user/per-device authentication, rate limiting, and a
 notification service such as push notifications or enterprise messaging.
 
 The sample exposes methods that can be connected to Unity UI buttons or called
-from an AR-glasses workflow:
+from a glasses workflow:
 
 ```csharp
 sample.StartDirectExpertCall("expert-amy");
@@ -143,7 +143,7 @@ sample.CreateExternalGuestLink(30);
 ```
 
 Only an internal member with **Local Member Id** can create a scheduled
-meeting. AR devices can list and join schedules assigned to their device ID.
+meeting. Devices can list and join schedules assigned to their device ID.
 
 An equipment QR can also open the Android app through:
 
@@ -193,7 +193,7 @@ size/hash does not match.
 - The App ID field is retained for Agora API / UI compatibility and is
   optional for LiveKit.
 - For LiveKit, camera/microphone enumeration uses Unity device APIs. Android
-  continues to prefer the Jorjin JJSDK AR camera before WebCamTexture fallback.
+  continues to prefer the Jorjin JJSDK camera before WebCamTexture fallback.
 - LiveKit participant identities are strings. The legacy `uint uid` callbacks
   use a deterministic mapping valid for the current Session; new integrations
   should keep the string identity as their primary key.

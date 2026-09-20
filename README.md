@@ -1,10 +1,10 @@
-# AR LiveKit Unity Meeting
+# LiveKit Unity Meeting
 
-這個 repository 包含 Unity／AR 眼鏡視訊會議程式、LiveKit Transcript Agent，以及會議建立與 Token 發放服務。
+這個 repository 包含 Unity／眼鏡視訊會議程式、LiveKit Transcript Agent，以及會議建立與 Token 發放服務。
 
 ## 專案結構
 
-- `Assets/`：Unity 與 AR 眼鏡整合程式碼、場景及第三方 SDK。
+- `Assets/`：Unity 與眼鏡整合程式碼、場景及第三方 SDK。
 - `Packages/`、`ProjectSettings/`：Unity 套件與專案設定。
 - `TranscriptAgent/`：會議逐字稿與 MP3 錄音 Agent。
 - `MeetingBootstrapServer/`：會議路由與 LiveKit Token API。

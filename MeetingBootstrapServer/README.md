@@ -48,7 +48,7 @@ The generic company configuration contains:
 
 - `members`: the named internal-member directory;
 - `groups`: group members and optional escalation groups;
-- `device_assignments`: the default support group for each AR device;
+- `device_assignments`: the default support group for each device;
 - `qr_assignments`: opaque QR value to device, location, problem type, group,
   and asset metadata;
 - the legacy `room_name` and `auto_join` fields used by the original bootstrap
@@ -139,7 +139,7 @@ Unity schedule creation uses:
 
 - `caller_member_id` as the required host;
 - `participant_ids` for invited company members;
-- `participant_device_ids` for specified AR glasses;
+- `participant_device_ids` for specified glasses;
 - ISO-8601 `scheduled_start_utc` and `scheduled_end_utc`.
 
 Join/accept and incoming/scheduled queries require exactly one caller type:
@@ -159,7 +159,7 @@ Session create/join/accept endpoints return:
     "room_name": "example-company-group-...",
     "status": "active",
     "host_identity": "example-company-AR-GLASSES-001",
-    "host_name": "Factory AR 01",
+    "host_name": "Factory 01",
     "target_member_id": null,
     "target_device_id": null,
     "group_id": "support-l1",
@@ -208,14 +208,14 @@ Content-Type: application/json
 {
   "company_id": "example-company",
   "device_id": "AR-GLASSES-001",
-  "participant_name": "Factory AR 01",
+  "participant_name": "Factory 01",
   "target_member_id": "expert-alice",
   "location_id": "factory-line-01",
   "problem_type": "equipment-support"
 }
 ```
 
-An internal member can also call a target pair of AR glasses:
+An internal member can also call a target pair of glasses:
 
 ```json
 {
@@ -244,7 +244,7 @@ Content-Type: application/json
 {
   "company_id": "example-company",
   "device_id": "AR-GLASSES-001",
-  "participant_name": "Factory AR 01",
+  "participant_name": "Factory 01",
   "group_id": "support-l1",
   "location_id": "factory-line-01",
   "problem_type": "equipment-support"
@@ -259,7 +259,7 @@ GET /api/v1/sessions/incoming?company_id=example-company&member_id=expert-alice
 X-Device-Key: <device key>
 ```
 
-An AR device polls calls made by a remote member:
+A device polls calls made by a remote member:
 
 ```http
 GET /api/v1/sessions/incoming?company_id=example-company&device_id=AR-GLASSES-001
@@ -299,7 +299,7 @@ Content-Type: application/json
 {
   "company_id": "example-company",
   "qr_code": "DEMO-QR-ASSET-LINE-01",
-  "participant_name": "Factory AR 01"
+  "participant_name": "Factory 01"
 }
 ```
 
@@ -332,7 +332,7 @@ Content-Type: application/json
 
 `starts_at` and `ends_at` must include a timezone offset.
 
-List for one AR device:
+List for one device:
 
 ```http
 GET /api/v1/schedules?company_id=example-company&device_id=AR-GLASSES-001
@@ -356,7 +356,7 @@ Content-Type: application/json
 {
   "company_id": "example-company",
   "device_id": "AR-GLASSES-001",
-  "participant_name": "Factory AR 01"
+  "participant_name": "Factory 01"
 }
 ```
 
@@ -452,7 +452,7 @@ Content-Type: application/json
 {
   "company_id": "example-company",
   "device_id": "AR-GLASSES-001",
-  "participant_name": "Factory AR 01"
+  "participant_name": "Factory 01"
 }
 ```
 
