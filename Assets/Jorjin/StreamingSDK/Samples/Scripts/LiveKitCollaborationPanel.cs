@@ -342,7 +342,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
             ?? sources.Find(v => v.Identity != main?.Identity);
         bool glasses = main != null && glassesSources.Contains(main.Key);
         bool fieldSide = main != null && !main.IsScreenShare && IsField(main);
-        videoTitle.text = glasses ? "AR Glasses Video (Selected)" : fieldSide ? "Field Video" : "Live Video / Select Glasses";
+        videoTitle.text = glasses ? "Glasses Video (Selected)" : fieldSide ? "Field Video" : "Live Video / Select Glasses";
         videoStatus.text = main == null ? "Source unavailable. Connect or switch sources." :
             (main.IsLocal ? "Local preview" : "LiveKit remote feed") + ": " + Compact(main.Identity, 36) +
             (main.IsScreenShare ? " / Screen share" : " / Camera") +
@@ -417,7 +417,7 @@ public sealed class LiveKitCollaborationPanel : MonoBehaviour
         panel.transform.SetParent(canvasObject.transform, false);
         Stretch(panel.GetComponent<RectTransform>(), Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
         panel.GetComponent<Image>().color = new Color(.035f, .055f, .09f, 1);
-        Label(panel.transform, "AR Remote Collaboration", 29, new Vector2(22, -15), new Vector2(600, 44));
+        Label(panel.transform, "Remote Collaboration", 29, new Vector2(22, -15), new Vector2(600, 44));
         capture = ButtonAt(panel.transform, "Screenshot", Vector2.one, new Vector2(-295, -18), new Vector2(125, 38), () => StartCoroutine(CaptureWorkspace()));
         ButtonAt(panel.transform, "Back to Call", Vector2.one, new Vector2(-155, -18), new Vector2(130, 38), () => SetWorkspaceVisible(false));
         translateButton = ButtonAt(panel.transform, "Live Translation: Off", Vector2.one, new Vector2(-455, -18), new Vector2(150, 38), () => toggleTranslation?.Invoke());

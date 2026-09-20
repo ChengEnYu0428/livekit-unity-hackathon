@@ -213,7 +213,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         cameraButton = CreateAdvancedButton(
             advancedBar,
             "Camera Button",
-            "CAMERA\nREAR/AR",
+            "CAMERA\nREAR",
             new Color32(62, 92, 135, 255),
             AdvancedControl.Camera,
             out cameraButtonLabel);
@@ -525,7 +525,7 @@ public sealed class LiveKitMeetingView : MonoBehaviour
         SetAdvancedButtonState(
             cameraButton,
             cameraButtonLabel,
-            frontCamera ? "CAMERA\nFRONT" : "CAMERA\nREAR/AR",
+            frontCamera ? "CAMERA\nFRONT" : "CAMERA\nREAR",
             frontCamera,
             new Color32(30, 125, 180, 255));
         SetAdvancedButtonState(
